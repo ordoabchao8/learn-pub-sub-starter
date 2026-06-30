@@ -3,8 +3,6 @@ package main
 import (
 	"fmt"
 	"log"
-	"os"
-	"os/signal"
 	amqp "github.com/rabbitmq/amqp091-go"
 	"github.com/bootdotdev/learn-pub-sub-starter/internal/pubsub"
 	"github.com/bootdotdev/learn-pub-sub-starter/internal/gamelogic"
@@ -28,18 +26,47 @@ func main() {
 		log.Fatalf("Error creating username. Error: %s", err)
 	}
 	// Channel here is ignored for now!!
-	_, queue, err := pubsub.DeclareAndBind(connection, routing.ExchangePerilDirect, routing.PauseKey+ "." + userName, routing.PauseKey, pubsub.Transient)
+	_, pauseQueue, err := pubsub.DeclareAndBind(connection, routing.ExchangePerilDirect, routing.PauseKey+ "." + userName, routing.PauseKey, pubsub.Transient)
 	if err != nil {
 		log.Fatalf("Error binding queue to exchange. Error: %s", err)
 	}
-	fmt.Println(queue.Name)
-
-
-
+	fmt.Println(pauseQueue.Name)
+	gameState := gamelogic.NewGameState(userName)
+	for {
+		userInput := gamelogic.GetInput()
+		if userInput == nil {
+			continue
+		}
+		switch userInput[0] {
+		case "spawn":
+			err = gameState.CommandSpawn(userInput)
+			if err != nil {
+				fmt.Println(err)
+			}
+		case "move":
+			currentMove, err := gameState.CommandMove(userInput)
+			if err != nil {
+				fmt.Println(err)
+			}
+			fmt.Printf("Successfully moved unit! ArmyMove:  %v", currentMove)
+		case "status":
+			gameState.CommandStatus()
+		case "help":
+			gamelogic.PrintClientHelp()
+		case "spam":
+			fmt.Println("Spamming not allowed yet!")
+		case "quit":
+			gamelogic.PrintQuit()
+			return
+		default:
+			fmt.Println("Unknown command try again")
+			continue
+		}
+	}
 	// wait for ctrl+c
-	signalChan := make(chan os.Signal, 1)
-	signal.Notify(signalChan, os.Interrupt)
- 	<-signalChan
+	//signalChan := make(chan os.Signal, 1)
+	//signal.Notify(signalChan, os.Interrupt)
+ 	//<-signalChan
 
-	fmt.Println("\nStop signal recieved. RabbitMQ shutting down.")
+	//fmt.Println("\nStop signal recieved. RabbitMQ shutting down.")
 }
