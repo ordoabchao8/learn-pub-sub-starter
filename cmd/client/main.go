@@ -20,21 +20,28 @@ func main() {
 	}
 	defer connection.Close()
 	fmt.Println("rabbitMQ connection successful")
-
+	ch, err := connection.Channel()
+	if err != nil {
+		log.Fatalf("Error creating channel from connection. Error: %v", err)
+	}
+	defer ch.Close()
 	userName, err := gamelogic.ClientWelcome()
 	if err != nil {
 		log.Fatalf("Error creating username. Error: %s", err)
 	}
-	// Channel here is ignored for now!!
-	_, pauseQueue, err := pubsub.DeclareAndBind(connection, routing.ExchangePerilDirect, routing.PauseKey+ "." + userName, routing.PauseKey, pubsub.Transient)
-	if err != nil {
-		log.Fatalf("Error binding queue to exchange. Error: %s", err)
-	}
-	fmt.Println(pauseQueue.Name)
+	
 	gameState := gamelogic.NewGameState(userName)
+	err = pubsub.SubscribeJSON(connection, routing.ExchangePerilDirect, routing.PauseKey+"."+userName, routing.PauseKey, pubsub.Transient, handlerPause(gameState))
+	if err != nil {
+		log.Fatalf("Error pausing game. Error: %v", err)
+	}
+	err = pubsub.SubscribeJSON(connection, routing.ExchangePerilTopic, routing.ArmyMovesPrefix+"."+userName, routing.ArmyMovesPrefix+".*", pubsub.Transient, handlerMove(gameState))
+	if err != nil {
+		log.Fatalf("Error subscribing to move queue. Error: %v", err)
+	}
 	for {
 		userInput := gamelogic.GetInput()
-		if userInput == nil {
+		if len(userInput) == 0 {
 			continue
 		}
 		switch userInput[0] {
@@ -47,6 +54,12 @@ func main() {
 			currentMove, err := gameState.CommandMove(userInput)
 			if err != nil {
 				fmt.Println(err)
+				continue 
+			}
+			err = pubsub.PublishJSON(ch, routing.ExchangePerilTopic, routing.ArmyMovesPrefix+"."+userName, currentMove)
+			if err != nil {
+				fmt.Println(err)
+				return
 			}
 			fmt.Printf("Successfully moved unit! ArmyMove:  %v", currentMove)
 		case "status":
@@ -69,4 +82,18 @@ func main() {
  	//<-signalChan
 
 	//fmt.Println("\nStop signal recieved. RabbitMQ shutting down.")
+}
+
+func handlerPause(gs *gamelogic.GameState) func(routing.PlayingState) {
+	return func(ps routing.PlayingState) {
+		defer fmt.Print("> ")
+		gs.HandlePause(ps)
+	}
+}
+
+func handlerMove(gs *gamelogic.GameState) func(gamelogic.ArmyMove) {
+	return func(am gamelogic.ArmyMove) {
+		defer fmt.Print("> ")
+		gs.HandleMove(am)
+	}
 }

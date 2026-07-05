@@ -18,14 +18,15 @@ func main() {
 		log.Fatalf("Error creating connection to rabbitMQ. Error:  %s", err)
 	}
 	defer connection.Close()
-	channel, err := connection.Channel()
-	if err != nil {
-		log.Fatalf("Error creating channel from connection. Error :%s", err)
-	}
+
 	fmt.Println("rabbitMQ connection successful")
 
-
-	fmt.Println("\nStop signal recieved. RabbitMQ shutting down.")
+	channel, topicQueue, err := pubsub.DeclareAndBind(connection, routing.ExchangePerilTopic, routing.GameLogSlug, "game_logs.*", pubsub.Durable)
+	if err != nil {
+		log.Fatalf("Error binding queue: %s to exchange: %s. Error: %s", routing.GameLogSlug, routing.ExchangePerilTopic, err)
+	}
+	fmt.Printf("Connection to queue successful. Queue name: %s\n", topicQueue.Name)
+ 
 
 	gamelogic.PrintServerHelp()
 	for {
@@ -50,6 +51,7 @@ func main() {
 			return
 		default:
 			log.Println("Command not available. Please try again.")
+			continue
 		}
 	}
 }
